@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Magic Reveal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;1,300&display=swap');
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root {
+    --gold:#c9a84c; --gold-light:#e8c97a;
+    --deep:#060608; --red:#c0392b; --dark:#1a1a2e;
+  }
+  html,body { height:100dvh; overflow:hidden; background:var(--deep); color:#fff; font-family:'Cinzel',serif; }
+
+  /* ── STARS ── */
+  .stars { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+  .star {
+    position:absolute; width:2px; height:2px; background:#fff; border-radius:50%;
+    animation:twinkle var(--d,3s) ease-in-out infinite var(--delay,0s); opacity:0;
+  }
+  @keyframes twinkle { 0%,100%{opacity:0} 50%{opacity:var(--bright,.5)} }
+
+  /* ── START SCREEN ── */
+  #startScreen {
+    position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:28px; padding:40px 28px;
+    background:radial-gradient(ellipse at 50% 35%, #160e22 0%, var(--deep) 65%);
+    z-index:200; transition:opacity .5s, visibility .5s;
+  }
+  #startScreen.gone { opacity:0; visibility:hidden; pointer-events:none; }
+
+  .s-eyebrow { font-size:.6rem; letter-spacing:.35em; color:rgba(201,168,76,.5); text-transform:uppercase; }
+  .s-title { font-size:clamp(1.8rem,8vw,3rem); font-weight:900; letter-spacing:.1em; color:var(--gold); text-align:center; }
+  .s-rule { width:60px; height:1px; background:linear-gradient(90deg,transparent,var(--gold),transparent); }
+  .s-desc {
+    font-family:'Crimson Pro',serif; font-style:italic; font-size:1.05rem;
+    color:rgba(255,255,255,.45); text-align:center; line-height:1.75; max-width:300px;
+  }
+  .s-desc strong { color:rgba(255,255,255,.72); font-style:normal; }
+
+  #startBtn {
+    padding:18px 52px;
+    background:linear-gradient(135deg,#6b4f10,var(--gold) 50%,#6b4f10);
+    border:none; border-radius:50px;
+    font-family:'Cinzel',serif; font-size:.9rem; letter-spacing:.25em; font-weight:700;
+    color:#0a0805; cursor:pointer; text-transform:uppercase;
+    box-shadow:0 0 32px rgba(201,168,76,.22);
+    transition:transform .15s;
+  }
+  #startBtn:active { transform:scale(.96); }
+
+  /* ── LISTEN SCREEN ── */
+  #listenScreen {
+    position:fixed; inset:0; background:#000;
+    display:none; align-items:center; justify-content:center;
+    z-index:100; cursor:pointer;
+  }
+
+  /* Performer-only mic status — tiny, bottom-left */
+  #micStatus {
+    position:absolute; bottom:14px; left:14px;
+    font-family:'Crimson Pro',serif; font-size:.6rem; letter-spacing:.08em;
+    color:rgba(255,255,255,0); /* invisible by default */
+    transition:color .3s;
+    user-select:none; pointer-events:none;
+  }
+  #micStatus.on  { color:rgba(100,220,100,.45); }
+  #micStatus.hit { color:rgba(201,168,76,.7); }
+  #micStatus.err { color:rgba(220,80,80,.5); }
+
+  /* tap-to-confirm hint (performer only, ultra-subtle) */
+  #tapHint {
+    position:absolute; bottom:14px; right:14px;
+    font-family:'Crimson Pro',serif; font-size:.55rem; letter-spacing:.1em;
+    color:rgba(255,255,255,.07);
+    user-select:none; pointer-events:none;
+  }
+
+  /* ── CARD DISPLAY ── */
+  #cardDisplay {
+    position:fixed; inset:0; display:none;
+    align-items:center; justify-content:center; background:#faf6f0;
+  }
+  .card-wrap { position:relative; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+  .c-suit   { font-size:clamp(3.5rem,16vw,8rem); line-height:1; }
+  .c-rank   { font-family:'Cinzel',serif; font-weight:900; font-size:clamp(4rem,20vw,10rem); line-height:1; letter-spacing:-.02em; }
+  .c-name   { font-family:'Crimson Pro',serif; font-style:italic; font-size:clamp(.95rem,3.5vw,1.6rem); letter-spacing:.12em; opacity:.55; margin-top:6px; }
+  .c-corner { position:absolute; font-family:'Cinzel',serif; font-weight:700; font-size:clamp(1.2rem,5vw,2rem); line-height:1.15; display:flex; flex-direction:column; align-items:center; }
+  .c-corner .cs { font-size:.8em; }
+  .c-corner.tl { top:20px; left:24px; }
+  .c-corner.br { bottom:20px; right:24px; transform:rotate(180deg); }
+  .red { color:var(--red); }
+  .blk { color:var(--dark); }
+
+  /* ── CANVAS ── */
+  #eraseCanvas {
+    position:fixed; inset:0; width:100%; height:100%;
+    touch-action:none; z-index:110; display:none; cursor:crosshair;
+  }
+
+  /* ── RESET ── */
+  #resetBtn {
+    position:fixed; bottom:36px; left:50%; transform:translateX(-50%);
+    padding:13px 36px; background:rgba(0,0,0,.75);
+    border:1px solid var(--gold); border-radius:50px;
+    color:var(--gold); font-family:'Cinzel',serif; font-size:.75rem; letter-spacing:.2em;
+    cursor:pointer; z-index:120; opacity:0; pointer-events:none;
+    transition:opacity .6s; text-transform:uppercase;
+  }
+  #resetBtn.show { opacity:1; pointer-events:all; }
+
+  /* ── TOAST ── */
+  #toast {
+    position:fixed; bottom:64px; left:50%; transform:translateX(-50%);
+    background:rgba(160,35,35,.88); color:#fff;
+    font-family:'Crimson Pro',serif; font-style:italic;
+    font-size:.9rem; letter-spacing:.05em;
+    padding:10px 24px; border-radius:8px;
+    z-index:300; opacity:0; pointer-events:none;
+    transition:opacity .4s; white-space:nowrap;
+  }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<!-- START -->
+<div id="startScreen">
+  <div class="s-eyebrow">Mentalist Tool</div>
+  <div class="s-title">Magic<br>Reveal</div>
+  <div class="s-rule"></div>
+  <div class="s-desc">
+    點擊開始後螢幕變黑，<strong>說出任意一張牌</strong>。<br>
+    觀眾抹開螢幕，奇蹟揭曉。
+  </div>
+  <button id="startBtn">開始表演</button>
+</div>
+
+<!-- LISTEN (pure black) -->
+<div id="listenScreen">
+  <div id="micStatus">● REC</div>
+  <div id="tapHint">tap to confirm</div>
+</div>
+
+<!-- CARD -->
+<div id="cardDisplay">
+  <div class="card-wrap">
+    <div class="c-corner tl" id="ctl"></div>
+    <div class="c-suit"      id="cSuit"></div>
+    <div class="c-rank"      id="cRank"></div>
+    <div class="c-name"      id="cName"></div>
+    <div class="c-corner br" id="cbr"></div>
+  </div>
+</div>
+
+<!-- ERASE -->
+<canvas id="eraseCanvas"></canvas>
+
+<!-- RESET -->
+<button id="resetBtn">← 重新表演</button>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+/* ── STARS ── */
+const starsEl = document.getElementById('stars');
+for (let i = 0; i < 90; i++) {
+  const s = document.createElement('div'); s.className = 'star';
+  s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;--d:${2+Math.random()*4}s;--delay:${Math.random()*6}s;--bright:${.25+Math.random()*.55}`;
+  starsEl.appendChild(s);
+}
+
+/* ── CARD DATA ── */
+const SUITS = {
+  spades:   { sym:'♠', name:'Spades',   zh:'黑桃', isRed:false },
+  hearts:   { sym:'♥', name:'Hearts',   zh:'紅心', isRed:true  },
+  diamonds: { sym:'♦', name:'Diamonds', zh:'方塊', isRed:true  },
+  clubs:    { sym:'♣', name:'Clubs',    zh:'梅花', isRed:false },
+};
+const RANKS = {
+  'A': { en:'Ace',   short:'A'  },
+  '2': { en:'Two',   short:'2'  },
+  '3': { en:'Three', short:'3'  },
+  '4': { en:'Four',  short:'4'  },
+  '5': { en:'Five',  short:'5'  },
+  '6': { en:'Six',   short:'6'  },
+  '7': { en:'Seven', short:'7'  },
+  '8': { en:'Eight', short:'8'  },
+  '9': { en:'Nine',  short:'9'  },
+  '10':{ en:'Ten',   short:'10' },
+  'J': { en:'Jack',  short:'J'  },
+  'Q': { en:'Queen', short:'Q'  },
+  'K': { en:'King',  short:'K'  },
+};
+
+/* ── PARSE ── */
+const suitMap = [
+  { key:'spades',   words:['spade','spades','黑桃','黑桃','♠'] },
+  { key:'hearts',   words:['heart','hearts','紅心','愛心','紅','♥'] },
+  { key:'diamonds', words:['diamond','diamonds','方塊','方块','♦'] },
+  { key:'clubs',    words:['club','clubs','梅花','草花','♣'] },
+];
+const rankMap = [
+  { key:'A',  words:['ace',' a ','ace of','\u4e00','黑桃a','紅心a','方塊a','梅花a'] },
+  { key:'2',  words:['two','2','二'] },
+  { key:'3',  words:['three','3','三'] },
+  { key:'4',  words:['four','4','四'] },
+  { key:'5',  words:['five','5','五'] },
+  { key:'6',  words:['six','6','六'] },
+  { key:'7',  words:['seven','7','七'] },
+  { key:'8',  words:['eight','8','八'] },
+  { key:'9',  words:['nine','9','九'] },
+  { key:'10', words:['ten','10','十'] },
+  { key:'J',  words:['jack','j','傑克','鬼'] },
+  { key:'Q',  words:['queen','q','皇后','女王'] },
+  { key:'K',  words:['king','k','國王','老k','老K'] },
+];
+
+function parseCard(text) {
+  const t = (' ' + text.toLowerCase() + ' ');
+  let suit = null, rank = null;
+  for (const s of suitMap)  { if (s.words.some(w => t.includes(w))) { suit = s.key; break; } }
+  for (const r of rankMap)  { if (r.words.some(w => t.includes(w))) { rank = r.key; break; } }
+  return (suit && rank) ? { suitKey:suit, rankKey:rank } : null;
+}
+
+/* ── STATE ── */
+let recognizedCard = null;
+let recognition    = null;
+let listening      = false;
+
+/* ── UI HELPERS ── */
+function toast(msg, ms=2400) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+function setMic(state, label) {           // state: 'on' | 'hit' | 'err' | 'off'
+  const el = document.getElementById('micStatus');
+  el.className = state; el.textContent = label || '● REC';
+}
+
+/* ── SPEECH ── */
+function startListening() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('此裝置不支援語音辨識'); return false; }
+
+  recognition = new SR();
+  recognition.continuous      = true;
+  recognition.interimResults  = true;
+  recognition.maxAlternatives = 5;
+  recognition.lang            = 'zh-TW';   // iOS picks up EN words in zh-TW mode too
+
+  recognition.onstart = () => {
+    listening = true;
+    setMic('on', '● REC');
+  };
+
+  recognition.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      for (let a = 0; a < e.results[i].length; a++) {
+        const parsed = parseCard(e.results[i][a].transcript);
+        if (parsed) {
+          recognizedCard = parsed;
+          const s = SUITS[parsed.suitKey], r = RANKS[parsed.rankKey];
+          setMic('hit', `✦ ${s.zh}${r.short}`);   // tiny gold flash for performer
+          setTimeout(() => setMic('on','● REC'), 1200);
+        }
+      }
+    }
+  };
+
+  recognition.onerror = e => {
+    if (e.error === 'not-allowed') { setMic('err','✕ MIC'); toast('請允許麥克風權限'); }
+    else if (e.error !== 'no-speech') { setMic('err', e.error); }
+  };
+
+  recognition.onend = () => {
+    if (listening) { try { recognition.start(); } catch(_) {} }  // auto-restart
+  };
+
+  try { recognition.start(); return true; }
+  catch(e) { toast('語音辨識啟動失敗'); return false; }
+}
+
+function stopListening() {
+  listening = false;
+  setMic('off','');
+  if (recognition) { try { recognition.stop(); recognition.abort(); } catch(_){} }
+}
+
+/* ── BUILD CARD ── */
+function buildCard() {
+  const { suitKey, rankKey } = recognizedCard;
+  const suit = SUITS[suitKey], rank = RANKS[rankKey];
+  const cls  = suit.isRed ? 'red' : 'blk';
+
+  document.getElementById('cSuit').textContent = suit.sym;
+  document.getElementById('cSuit').className   = `c-suit ${cls}`;
+  document.getElementById('cRank').textContent = rankKey;
+  document.getElementById('cRank').className   = `c-rank ${cls}`;
+  document.getElementById('cName').textContent = `${rank.en} of ${suit.name}`;
+  document.getElementById('cName').className   = `c-name ${cls}`;
+
+  ['ctl','cbr'].forEach(id => {
+    const el = document.getElementById(id);
+    el.innerHTML = `<span>${rankKey}</span><span class="cs">${suit.sym}</span>`;
+    el.className = `c-corner ${id === 'ctl' ? 'tl' : 'br'} ${cls}`;
+  });
+}
+
+/* ── CANVAS ERASE ── */
+let revealed = false;
+
+function initCanvas() {
+  const canvas = document.getElementById('eraseCanvas');
+  const ctx    = canvas.getContext('2d');
+  revealed = false;
+  canvas.style.opacity    = '1';
+  canvas.style.transition = '';
+  canvas.style.pointerEvents = 'all';
+
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const R = Math.min(canvas.width, canvas.height) * .10;
+  let lastX, lastY, isDown = false;
+
+  function erase(x, y) {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(x, y, R, 0, Math.PI*2);
+    ctx.fill();
+    checkReveal(ctx, canvas);
+  }
+  function sweep(x, y) {
+    const dist  = Math.hypot(x-lastX, y-lastY);
+    const steps = Math.max(1, Math.ceil(dist/(R*.35)));
+    for (let i=1;i<=steps;i++) erase(lastX+(x-lastX)*i/steps, lastY+(y-lastY)*i/steps);
+    lastX=x; lastY=y;
+  }
+
+  canvas.addEventListener('touchstart', e=>{
+    e.preventDefault(); isDown=true;
+    lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+    erase(lastX,lastY);
+  },{passive:false});
+  canvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(!revealed) sweep(e.touches[0].clientX, e.touches[0].clientY);
+  },{passive:false});
+  canvas.addEventListener('touchend', ()=>isDown=false);
+  canvas.addEventListener('mousedown', e=>{ isDown=true; lastX=e.clientX; lastY=e.clientY; erase(lastX,lastY); });
+  canvas.addEventListener('mousemove', e=>{ if(isDown&&!revealed) sweep(e.clientX,e.clientY); });
+  canvas.addEventListener('mouseup',   ()=>isDown=false);
+}
+
+function checkReveal(ctx, canvas) {
+  const d = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  let t=0, step=20, total=d.length/(4*step);
+  for(let i=3;i<d.length;i+=4*step) if(d[i]<100) t++;
+  if(t/total>.52 && !revealed) {
+    revealed=true;
+    canvas.style.transition='opacity .7s'; canvas.style.opacity='0';
+    setTimeout(()=>canvas.style.pointerEvents='none',700);
+    document.getElementById('resetBtn').classList.add('show');
+  }
+}
+
+/* ── FLOW ── */
+
+// START button → must be user gesture for iOS mic permission
+document.getElementById('startBtn').addEventListener('click', () => {
+  recognizedCard = null;
+  const ok = startListening();
+  if (!ok) return;
+
+  document.getElementById('startScreen').classList.add('gone');
+  document.getElementById('listenScreen').style.display = 'flex';
+  document.getElementById('cardDisplay').style.display  = 'none';
+  document.getElementById('eraseCanvas').style.display  = 'none';
+  document.getElementById('resetBtn').classList.remove('show');
+});
+
+// TAP black screen → freeze card, hand to audience
+document.getElementById('listenScreen').addEventListener('click', () => {
+  if (!recognizedCard) {
+    toast('尚未辨識到牌，請再說一次', 1800);
+    return;
+  }
+  stopListening();
+  buildCard();
+  document.getElementById('cardDisplay').style.display  = 'flex';
+  document.getElementById('listenScreen').style.display = 'none';
+  initCanvas();
+  document.getElementById('eraseCanvas').style.display  = 'block';
+});
+
+// RESET
+document.getElementById('resetBtn').addEventListener('click', () => {
+  recognizedCard = null; revealed = false;
+  document.getElementById('eraseCanvas').style.display = 'none';
+  document.getElementById('cardDisplay').style.display = 'none';
+  document.getElementById('resetBtn').classList.remove('show');
+  document.getElementById('startScreen').classList.remove('gone');
+  // re-init stars visibility
+  document.getElementById('listenScreen').style.display = 'none';
+});
+</script>
+</body>
+</html>
